@@ -94,25 +94,45 @@ END 成功只代表完整固件及安装请求已持久化，安装发生在随�
 
 ## 上位机示例
 
-Windows 可以直接使用系统 Python，脚本自带 Win32 串口适配，无需安装额外包。
-其他系统安装 pyserial 后可使用相同 CLI。关闭其他占用 COM4 的串口终端。
+先在 CLion 编译 `APP.elf`，生成 `cmake-build-debug/APP.bin`。
+Windows 脚本自带 Win32 串口适配，无需安装额外包；下面使用本机已验证的 Python 解释器。
+其他电脑将 `$python` 改为实际的 Python 3.9 以上解释器路径；其他系统安装 pyserial 后可使用相同 CLI。
+关闭其他占用 COM4 的串口终端，以下命令在 APP 根目录运行。
 
 ```powershell
 # 查询
-python -B tools/uart_update.py --port COM4 query
+$python = "C:\msys64\ucrt64\bin\python.exe"
+& $python -u -B tools/uart_update.py --port COM4 query
 
 # 接收完成后继续运行当前 APP，下次复位安装
-python -B tools/uart_update.py --port COM4 upload build/freertos/APP.bin --version 2 --mode defer
+& $python -u -B tools/uart_update.py --port COM4 upload cmake-build-debug/APP.bin --version 2 --mode defer
 
 # 接收完成后自动重启安装
-python -B tools/uart_update.py --port COM4 upload build/freertos/APP.bin --version 3 --mode now
+& $python -u -B tools/uart_update.py --port COM4 upload cmake-build-debug/APP.bin --version 3 --mode now
 
 # 取消延期升级
-python -B tools/uart_update.py --port COM4 abort
+& $python -u -B tools/uart_update.py --port COM4 abort
 
 # 主动触发已经延期提交的升级
-python -B tools/uart_update.py --port COM4 reboot
+& $python -u -B tools/uart_update.py --port COM4 reboot
 ```
 
 立即模式之后给 Bootloader 留出 Flash 安装时间，再 QUERY 确认 running_version。
 默认 QUERY 的重试超时足以覆盖本工程的安装时长。
+QUERY 会打印字典，`status: 0` 表示成功；立即升级示例完成后应看到 `running_version: 3`。
+上传过程显示 `Uploaded 已上传字节/总字节`。`--version` 是升级包标记，无需同步修改 CMake 版本设置。
+
+## 执行后没有输出
+
+正常查询会打印状态，串口打开失败或通信超时会打印错误。如果 `python ...` 立即返回且没有任何输出，
+先检查当前 PowerShell 解析到的解释器，再用绝对路径执行，避免别名或 PATH 差异：
+
+```powershell
+Get-Command python -All | Format-List CommandType,Source,Definition
+& "C:\msys64\ucrt64\bin\python.exe" -c "import sys; print(sys.executable)"
+& "C:\msys64\ucrt64\bin\python.exe" -u -B tools/uart_update.py --port COM4 query
+$LASTEXITCODE
+```
+
+`-u` 使输出不缓冲，`-B` 禁止生成 Python 字节码缓存。END 超时后先 QUERY 确认待安装状态或运行版本，
+不要直接反复发送新的上传命令，以免 BEGIN 擦除已提交的延期请求。
