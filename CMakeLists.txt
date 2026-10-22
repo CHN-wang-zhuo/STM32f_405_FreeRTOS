@@ -1,4 +1,4 @@
-#此文件从模板自动生成! 请勿更改!
+# APP build entry point; maintained directly without a generation template.
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_VERSION 1)
 cmake_minimum_required(VERSION 4.2)
@@ -49,7 +49,7 @@ else ()
     add_compile_options(-Og -g)
 endif ()
 
-include_directories(Core/Inc Config BSP/Inc Drivers/Device/Inc Application/Inc Middlewares/UpdateProtocol/Inc Services/FirmwareUpdate/Inc STM32f_405_boot_loader/Core/Inc Middlewares/Third_Party/FreeRTOS/include Middlewares/Third_Party/FreeRTOS/portable/GCC/ARM_CM4F Drivers/STM32F4xx_HAL_Driver/Inc Drivers/STM32F4xx_HAL_Driver/Inc/Legacy Drivers/CMSIS/Device/ST/STM32F4xx/Include Drivers/CMSIS/Include)
+include_directories(Core/Inc Drivers/STM32F4xx_HAL_Driver/Inc Drivers/STM32F4xx_HAL_Driver/Inc/Legacy Drivers/CMSIS/Device/ST/STM32F4xx/Include Drivers/CMSIS/Include)
 
 add_definitions(-DDEBUG -DUSE_HAL_DRIVER -DSTM32F405xx)
 
@@ -67,10 +67,11 @@ set_property(TARGET ${PROJECT_NAME}.elf APPEND PROPERTY LINK_DEPENDS ${LINKER_SC
 set(HEX_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.hex)
 set(BIN_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.bin)
 
-add_custom_command(OUTPUT ${HEX_FILE} ${BIN_FILE}
+add_custom_command(TARGET ${PROJECT_NAME}.elf POST_BUILD
         COMMAND ${CMAKE_OBJCOPY} -Oihex $<TARGET_FILE:${PROJECT_NAME}.elf> ${HEX_FILE}
         COMMAND ${CMAKE_OBJCOPY} -Obinary $<TARGET_FILE:${PROJECT_NAME}.elf> ${BIN_FILE}
-        DEPENDS ${PROJECT_NAME}.elf
+        BYPRODUCTS ${HEX_FILE} ${BIN_FILE}
+        VERBATIM
         COMMENT "Building ${HEX_FILE}
 Building ${BIN_FILE}")
 

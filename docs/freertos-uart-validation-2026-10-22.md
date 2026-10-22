@@ -68,4 +68,6 @@ APP 留在运行状态。暂存区保留测试版本 3，但其请求已取消�
 本机日志、断点脚本和 Flash 备份保存在被 Git 忽略的 `build/freertos/hardware/`：
 `freertos-start.log`、`uart-defer.log`、`defer-still-old.log`、`uart-immediate.log`、
 `immediate-running.log`、`readback-validation.txt`、`restore-final-v1.log` 和 `final-running-v1.log`。
+清理 `build/` 后，这些日志、脚本和 Flash 备份已归档到本机
+`validation-archives/hardware-validation-2026-10-22.zip`，包内保留原目录结构。
 未进行实际断电中断擦写、长时间负载稳定性或其他业务外设通信测试。

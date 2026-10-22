@@ -11,12 +11,15 @@ endif()
 # An ALL target also refreshes metadata when APP_FIRMWARE_VERSION or the tool changes
 # without requiring a new ELF link. It is available in CLion as APP_package.
 add_custom_target(APP_package ALL
+    # Also recover deleted raw images when packaging an unchanged ELF.
+    COMMAND "${CMAKE_OBJCOPY}" -Oihex $<TARGET_FILE:${PROJECT_NAME}.elf> "${HEX_FILE}"
+    COMMAND "${CMAKE_OBJCOPY}" -Obinary $<TARGET_FILE:${PROJECT_NAME}.elf> "${BIN_FILE}"
     COMMAND "${Python3_EXECUTABLE}" -B "${APP_PACKAGE_TOOL}" "${BIN_FILE}"
         --version "${APP_FIRMWARE_VERSION}"
         --output "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.manifest.bin"
         --installed-hex "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.installed.hex"
         --update-hex "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.update.hex"
-    DEPENDS ${PROJECT_NAME}.elf "${BIN_FILE}" "${HEX_FILE}"
+    DEPENDS ${PROJECT_NAME}.elf
     BYPRODUCTS "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.manifest.bin"
                "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.installed.hex"
                "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.update.hex"

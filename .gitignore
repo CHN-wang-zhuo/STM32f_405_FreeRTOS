@@ -1,6 +1,7 @@
 # Build directories and generated firmware
 /cmake-build-*/
 /build/
+/validation-archives/
 /Debug/
 /Release/
 *.o

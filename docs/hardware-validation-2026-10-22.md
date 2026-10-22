@@ -51,6 +51,9 @@ SHA-256：`FB87711DAD1A474BD35D545867A003C772238F5B1F49C555C3F5F79E2FB1061A`。
 - `repeat-reset.log`：已处理请求不重复安装。
 - `restore-factory-v1.log` / `final-v1.log`：恢复当前版本、最终启动和留板状态。
 
+清理 `build/` 后，以上 Flash 备份、日志和脚本已归档到本机
+`validation-archives/hardware-validation-2026-10-22.zip`，包内保留原目录结构。
+
 暂存包下载命令没有附带 reset/run，下载后首次调试接管曾见到 HardFault 上下文；
 本次验收以脚本明确复位后的启动为准，此后 APP 的故障寄存器检查均通过。
 烧录后应显式复位，不从烧录过程残留的 CPU 上下文直接继续执行应用。
