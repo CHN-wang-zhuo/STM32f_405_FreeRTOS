@@ -36,8 +36,8 @@
 
 #define configUSE_IDLE_HOOK                     0
 #define configUSE_TICK_HOOK                     0
-#define configCHECK_FOR_STACK_OVERFLOW          0
-#define configUSE_MALLOC_FAILED_HOOK            0
+#define configCHECK_FOR_STACK_OVERFLOW          2
+#define configUSE_MALLOC_FAILED_HOOK            1
 
 /*==========================================================
  * 同步机制
@@ -99,7 +99,7 @@
 #define INCLUDE_xTimerPendFunctionCall          1
 
 /*==========================================================
- * FPU 支持（F405 必须）
+ * ARM_CM4F 移植层浮点上下文支持（编译器也需启用 fpv4-sp-d16）
  *==========================================================*/
 
 #define configENABLE_FPU                        1
@@ -109,13 +109,13 @@
  * 断言
  *==========================================================*/
 
-#define configASSERT(x) if((x) == 0) { taskDISABLE_INTERRUPTS(); for(;;); }
+#define configASSERT(x) do { if((x) == 0) { taskDISABLE_INTERRUPTS(); for(;;); } } while (0)
 
 /*==========================================================
  * SysTick 配置
  *==========================================================*/
 
-#define xPortSysTickHandler SysTick_Handler
+/* SysTick_Handler also advances the HAL tick before/after scheduler start. */
 #define vPortSVCHandler SVC_Handler
 #define xPortPendSVHandler PendSV_Handler
 

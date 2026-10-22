@@ -2,6 +2,9 @@
 
 本工程与同级目录 `STM32f_405_boot_loader` 配套使用。启动链路为：
 复位 → Bootloader 校验描述信息和固件 → APP Reset_Handler → SystemInit → main。
+当前 APP 已接入 FreeRTOS V11.1.0，并提供 USART1 固件更新服务：
+分块接收 → 内部 Flash 暂存 → 校验 → 立即重启安装或下次复位安装。
+目录职责和任务配置见 [分层架构](docs/architecture.md)，二进制格式见 [串口升级协议](docs/uart-update-protocol.md)。
 
 ## 启动配置
 
@@ -9,11 +12,11 @@
 - `SystemInit()` 从启动文件的 `g_pfnVectors` 获取实际向量表地址并写入 VTOR，
   在 HAL 启用 SysTick 之前完成设置，CMake 和 STM32CubeIDE 构建均适用。
 - APP 自己初始化 HAL、8 MHz HSE / 168 MHz 系统时钟、GPIO、DMA、SPI1、USART1。
-- 主循环每 500 ms 翻转 PA8 / LED0，可用于观察 APP 已进入主循环且 SysTick 正常工作。
+- main 完成 BSP 初始化后创建任务并启动调度器；心跳任务每 500 ms 翻转 PA8 / LED0。
 
 不要将 APP 链接到暂存区，也不要给原始 `.bin` 添加文件头。
 `STM32F405RGTX_RAM.ld` 仅用于 RAM 调试，不用于 Bootloader 固件打包。
-CubeMX 重新生成后，需保留上述 Flash 分区、`SystemInit()` 的 VTOR 设置和主循环代码。
+CubeMX 重新生成后，需保留上述 Flash 分区、`SystemInit()` 的 VTOR 设置、任务启动和 RTOS 中断入口。
 CMake 模板已同步打包配置，CLion 重新生成 CMakeLists 后仍可使用。
 
 ## 编译与首次装机
@@ -21,12 +24,12 @@ CMake 模板已同步打包配置，CLion 重新生成 CMakeLists 后仍可使�
 在 APP 目录执行（需要 ARM GCC、CMake、Ninja 和 Python 3.9 以上）：
 
 ```powershell
-cmake -S . -B build/integration-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
-cmake --build build/integration-debug --target firmware_bundle
+cmake -S . -B build/freertos -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/freertos --target firmware_bundle
 ```
 
 `firmware_bundle` 先生成 APP 及描述信息，再编译同级 Bootloader，最后生成
-`build/integration-debug/firmware.factory.hex`。它包含：
+`build/freertos/firmware.factory.hex`。它包含：
 
 | 内容 | 地址 |
 | --- | --- |
@@ -38,7 +41,8 @@ cmake --build build/integration-debug --target firmware_bundle
 使用 STM32CubeProgrammer / SWD 对这个 HEX 按所含地址擦除、下载并校验，完成后复位。
 HEX 自带地址，不需要手工指定加载偏移。首次装机时设备不得在烧录中途运行；
 描述信息和 APP 完整写入并校验后再复位。已通过实板首次装机、暂存安装和复位启动验证，
-详见 [2026-10-22 实板记录](docs/hardware-validation-2026-10-22.md)。
+基础启动记录见 [首次实板记录](docs/hardware-validation-2026-10-22.md)，
+RTOS 与实际串口升级见 [FreeRTOS/USART1 联调记录](docs/freertos-uart-validation-2026-10-22.md)。
 
 CLion 使用已有 `cmake-build-debug` 时，选择并构建 `firmware_bundle` 目标，
 对应产物为 `cmake-build-debug/firmware.factory.hex`。
@@ -46,7 +50,7 @@ CLion 使用已有 `cmake-build-debug` 时，选择并构建 `firmware_bundle` �
 
 ## 后续 APP 更新
 
-普通构建（`cmake --build build/integration-debug`）会生成：
+普通构建（`cmake --build build/freertos`）会生成：
 
 | 文件 | 用法 |
 | --- | --- |
@@ -62,8 +66,8 @@ CLion 使用已有 `cmake-build-debug` 时，选择并构建 `firmware_bundle` �
 修改固件版本号：
 
 ```powershell
-cmake -S . -B build/integration-debug -DAPP_FIRMWARE_VERSION=2
-cmake --build build/integration-debug --target firmware_bundle
+cmake -S . -B build/freertos -DAPP_FIRMWARE_VERSION=2
+cmake --build build/freertos --target firmware_bundle
 ```
 
 可用 `-DBOOTLOADER_DIR=绝对路径` 指定 Bootloader 工程位置。打包工具直接读取
@@ -71,5 +75,19 @@ Bootloader 的 `Core/Inc/boot_protocol.h`，共享地址和协议常量。
 若使用 STM32CubeIDE 编译，则需要先导出原始 APP.bin，再手工调用 Bootloader 的
 `tools/make_manifest.py` 打包，参数见 Bootloader README。
 
-当前实现覆盖启动、首次装机和 SWD 升级验证，尚无串口/SPI/网络下载服务。
-以后添加 APP 在线下载模块时，应遵守 Bootloader README 的暂存写入及 commit 最后提交协议。
+## USART1 在线升级
+
+首次通过 SWD 写入上述 FreeRTOS 框架后，后续可直接使用 COM4 更新原始 APP.bin：
+
+```powershell
+python -B tools/uart_update.py --port COM4 query
+python -B tools/uart_update.py --port COM4 upload build/freertos/APP.bin --version 2 --mode defer
+python -B tools/uart_update.py --port COM4 upload build/freertos/APP.bin --version 3 --mode now
+```
+
+`defer` 保持当前 APP 运行，下一次复位由 Bootloader 安装；`now` 在应答发完后主动复位安装。
+UART1 使用 115200/8N1，PA9 为 TX、PA10 为 RX；升级必须逐帧等待 ACK，不能直接流式发送整个 BIN。
+Windows 上位机脚本无需额外依赖。完整命令、错误码与重试约定见协议文档。
+
+主机测试：`./tests/run_tests.ps1`。默认 MSYS2 UCRT64 GCC；脚本链接实际生产版升级服务和 Bootloader 核心。
+使用自定义 Python 时可通过 `-DPython3_EXECUTABLE=绝对路径` 选择可执行的解释器。

@@ -49,11 +49,11 @@ else ()
     add_compile_options(-Og -g)
 endif ()
 
-include_directories(Core/Inc Drivers/STM32F4xx_HAL_Driver/Inc Drivers/STM32F4xx_HAL_Driver/Inc/Legacy Drivers/CMSIS/Device/ST/STM32F4xx/Include Drivers/CMSIS/Include)
+include_directories(Core/Inc Config BSP/Inc Drivers/Device/Inc Application/Inc Middlewares/UpdateProtocol/Inc Services/FirmwareUpdate/Inc STM32f_405_boot_loader/Core/Inc Middlewares/Third_Party/FreeRTOS/include Middlewares/Third_Party/FreeRTOS/portable/GCC/ARM_CM4F Drivers/STM32F4xx_HAL_Driver/Inc Drivers/STM32F4xx_HAL_Driver/Inc/Legacy Drivers/CMSIS/Device/ST/STM32F4xx/Include Drivers/CMSIS/Include)
 
 add_definitions(-DDEBUG -DUSE_HAL_DRIVER -DSTM32F405xx)
 
-file(GLOB_RECURSE SOURCES "Core/*.*" "Drivers/*.*")
+include(${CMAKE_SOURCE_DIR}/cmake/app_sources.cmake)
 
 set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32F405RGTX_FLASH.ld)
 

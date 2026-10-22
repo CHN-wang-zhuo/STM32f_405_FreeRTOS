@@ -11,6 +11,8 @@
 *.bin
 *.map
 *.su
+__pycache__/
+*.py[cod]
 
 # Local IDE state and editor preferences
 /.idea/workspace.xml
