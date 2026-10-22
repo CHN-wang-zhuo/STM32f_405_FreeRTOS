@@ -26,17 +26,23 @@ USART 接收 ISR 只将字节投递到 stream buffer，不进行解析、CRC、F
 复位 → Bootloader 校验/安装 → APP Reset_Handler → SystemInit 设置 APP VTOR → main →
 BSP_Init → 创建任务 → vTaskStartScheduler。
 
-- `heartbeat`：优先级 1、256 个 32 位字的栈，每 500 ms 翻转 PA8，并更新诊断计数。
-- `fw_update`：优先级 3、1024 个 32 位字的栈，初始化 USART1 stream buffer，解析并处理更新帧。
+- `heartbeat`：优先级 1、128 个 32 位字的栈（512 字节），每 500 ms 翻转 PA8，并更新诊断计数。
+- `fw_update`：优先级 3、512 个 32 位字的栈（2048 字节），初始化 USART1 stream buffer，解析并处理更新帧。
 - FreeRTOS 额外创建 Idle 和软件定时器服务任务，总计 4 个任务。
-- heap_4 配置为 64 KiB，存放 RTOS 动态对象和任务栈；它位于普通 SRAM，不使用 CCM。
+- heap_4 配置为 16 KiB，存放 RTOS 动态对象和任务栈；它位于普通 SRAM，不使用 CCM。
+  链接统计包含整个预留堆，任务栈已在其中，不能重复相加；只缩小任务栈不会降低链接统计的 RAM 占用。
 - 开启栈溢出检查和 malloc 失败 hook，可通过 `g_app_diagnostics.fault` 查看故障。
 - 编译/链接均使用 `-mfpu=fpv4-sp-d16 -mfloat-abi=softfp`，不混用不同 APP ABI。
+  `softfp` 允许硬件浮点运算并采用通用寄存器传参；FPU 支持单精度 `float`，FreeRTOS 端口保存浮点上下文。
+  使用浮点或增加任务调用深度后，应重新检查任务栈水位和最低剩余堆。
 - SVC、PendSV 由 FreeRTOS 直接提供。SysTick 保留独立入口：始终更新 HAL tick，
   调度器启动后再调用 xPortSysTickHandler。编译检查固定 RTOS 节拍为 1 kHz。
 - BSP 将 USART1、SPI1 和相关 DMA IRQ 优先级统一设为 6，符合阈值 5 的 FromISR 要求。
 - UART1 为 115200、8N1、PA9/TX、PA10/RX，当前接收实现使用逐字节中断和 2048 字节 stream buffer。
   DMA 初始化保留给后续外设业务，但本升级传输不使用 DMA，也不使用 CCM 缓冲区。
+
+早期实板升级记录使用 64 KiB 堆和 256/1024 字的两个应用任务栈。
+当前 16 KiB 堆和 128/512 字栈配置已通过构建，完整升级流程下的栈水位及最低剩余堆仍需重新实测。
 
 ## Flash 和复位边界
 
@@ -59,7 +65,8 @@ STM32F405 是单 Bank Flash。擦写期间会阻塞从 Flash 取指，设备驱�
 ## 构建和生成工具
 
 CMake 使用显式源文件清单，第三方示例、其他端口及主机测试不会混入固件。
-CMake 模板已同步；STM32CubeIDE 的 Debug/Release include paths 和 source entries 也已补充，
+项目直接维护 `CMakeLists.txt`，不使用生成模板，IDE 的 CMakeLists 自动生成应关闭。
+STM32CubeIDE 的 Debug/Release include paths 和 source entries 也已补充，
 其中 CubeIDE 沿用工程已有的 hard-float 选项，不与 CMake 产物混合链接。
 本次已实际验证 CMake 构建，未运行 CubeIDE 的 managed build。
 

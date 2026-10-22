@@ -63,8 +63,8 @@ static void UpdateTask(void *argument)
 
 void AppTasks_Create(void)
 {
-    configASSERT(xTaskCreate(HeartbeatTask, "heartbeat", 256U, NULL, 1U, NULL) == pdPASS);
-    configASSERT(xTaskCreate(UpdateTask, "fw_update", 1024U, NULL, 3U, NULL) == pdPASS);
+    configASSERT(xTaskCreate(HeartbeatTask, "heartbeat", 128U, NULL, 1U, NULL) == pdPASS);
+    configASSERT(xTaskCreate(UpdateTask, "fw_update", 512U, NULL, 3U, NULL) == pdPASS);
 }
 
 void vApplicationMallocFailedHook(void)
