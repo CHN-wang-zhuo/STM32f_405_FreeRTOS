@@ -63,7 +63,9 @@ END 分块读取固件计算 CRC、校验向量表，最后单独写 commit。�
 
 ## 与现有 Bootloader 的边界
 
-本次不修改 Bootloader 工程或配置。APP 运行地址仍为 `0x08020000`，最大 384 KiB。
+APP 与 [STM32f_405_boot_loader](https://github.com/CHN-wang-zhuo/STM32f_405_boot_loader)
+是两个独立项目，各自维护源码和配置。本次不修改 Bootloader 项目。
+APP 运行地址仍为 `0x08020000`，最大 384 KiB。
 `running_version` 只读内部 `0x08008000` 的已安装描述；所有新的升级信息和固件只写 W25Q16。
 APP 不清除内部旧升级请求，也不写内部 `0x08080000` 暂存区；部署时通过 `APP.installed.hex` 取消旧内部请求。
 
@@ -75,12 +77,16 @@ APP 不清除内部旧升级请求，也不写内部 `0x08080000` 暂存区；�
 ## 构建和验证
 
 直接维护 `CMakeLists.txt`，不保留生成模板；IDE 的 CMakeLists 自动生成应关闭。
+通过 `-DBOOTLOADER_DIR=Bootloader仓库根目录的绝对路径` 指定外部源码依赖，
+共享协议头及打包脚本来自该独立仓库。CLion 应在 CMake options 中显式配置此变量。
 `APP.elf` 链接后生成 BIN/HEX，`APP_package` 生成当前 Bootloader 兼容的 SWD 安装包。
 `APP.update.hex` 仍是原内部暂存调试包，不是外置 Flash 镜像。此打包配置未随本次迁移修改。
 CubeIDE 保留原 hard-float 配置，其对象不能与 CMake softfp 对象混合；本次只验证 CMake 构建。
 CubeMX 重新生成时须保留 RTOS 中断入口、VTOR、PA2 高电平、SPI 分频和 USART1 RX circular DMA 配置。
 
 在 APP 根目录执行 `./tests/run_tests.ps1`，产物位于 `cmake-build-debug/tests/`。
+测试脚本中的 Bootloader 头文件与核心源码引用应对应实际检出路径；CMake 的 `BOOTLOADER_DIR`
+不会自动传入该脚本。两个项目放在不同源码位置时，应先调整测试脚本引用再运行。
 测试链接真实协议、服务、外部存储后端和原 Bootloader 核心，检查 NOR 限制、CRC、大小包替换、
 133 个擦除/逐字节编程故障点、请求恢复及内部 Flash 不改写。
 另用 HAL/RTOS 桩链接真实 W25Q16 和 UART DMA 驱动，覆盖页边界、超时、BUSY 等待、

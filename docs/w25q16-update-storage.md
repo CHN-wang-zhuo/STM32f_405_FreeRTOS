@@ -1,6 +1,7 @@
 # W25Q16 升级存储规范 v1
 
-本版本只修改 APP。Bootloader 工程、内部 Flash 分区及安装逻辑保持原样。
+本仓库只维护 APP；配套的 [STM32f_405_boot_loader](https://github.com/CHN-wang-zhuo/STM32f_405_boot_loader)
+是独立项目。本版本不修改该项目的源码、内部 Flash 分区及安装逻辑。
 APP 通过 USART1 接收升级包，将升级描述信息和固件数据全部存入外部 W25Q16，
 接收、校验、提交和取消期间均不擦写 STM32 内部 Flash。
 

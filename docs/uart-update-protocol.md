@@ -1,6 +1,7 @@
 # USART1 固件接收协议 FWUP v1
 
 当前 APP 把固件和升级信息写入外部 W25Q16，帧格式兼容原 FWUP v1。
+配套启动程序由独立的 [STM32f_405_boot_loader 项目](https://github.com/CHN-wang-zhuo/STM32f_405_boot_loader) 维护。
 **现有 Bootloader 未修改，不能安装外部固件。END 成功只表示外部候选包已完整提交，
 `now` 或 `reboot` 会复位但仍启动旧 APP。** 分区与元数据格式见 [W25Q16 存储规范](w25q16-update-storage.md)。
 

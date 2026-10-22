@@ -1,6 +1,9 @@
 # STM32F405 APP
 
-本工程与同级目录 `STM32f_405_boot_loader` 配套使用。启动链路为：
+本仓库是 STM32F405 的 APP 项目，配套的
+[STM32f_405_boot_loader](https://github.com/CHN-wang-zhuo/STM32f_405_boot_loader)
+是独立维护的项目。两个仓库分别获取，APP 构建通过 `BOOTLOADER_DIR` 指定 Bootloader 的本地源码路径。
+启动链路为：
 复位 → Bootloader 校验描述信息和固件 → APP Reset_Handler → SystemInit → main。
 当前 APP 已接入 FreeRTOS V11.1.0，并提供 USART1 固件更新服务：
 分块接收 → SPI1 DMA 写 W25Q16 → 校验并提交外部升级信息 → 立即重启或延期重启。
@@ -24,15 +27,25 @@ CMake 构建入口直接维护 `CMakeLists.txt`，不使用生成模板；分层
 
 ## 编译与首次装机
 
-CLion 使用 `cmake-build-debug` 构建目录。首次装机选择并构建 `firmware_bundle` 目标；
-后续串口更新只需编译 `APP.elf`。命令行在 APP 目录执行（需要 ARM GCC、CMake、构建工具和 Python 3.9 以上）：
+先获取独立的 [Bootloader 项目](https://github.com/CHN-wang-zhuo/STM32f_405_boot_loader)。
+APP 编译依赖其 `Core/Inc/boot_protocol.h`，打包依赖其 `tools/make_manifest.py`。
+例如将该仓库检出到 `D:/Dependencies/STM32f_405_boot_loader`；以下绝对路径均为示例，请替换为实际位置：
 
 ```powershell
-cmake -S . -B cmake-build-debug -DCMAKE_BUILD_TYPE=Debug -DPython3_EXECUTABLE=C:/msys64/ucrt64/bin/python.exe
+git clone https://github.com/CHN-wang-zhuo/STM32f_405_boot_loader.git D:/Dependencies/STM32f_405_boot_loader
+```
+
+CLion 使用 `cmake-build-debug` 构建目录。首次装机选择并构建 `firmware_bundle` 目标；
+在 CLion 的 CMake options 中加入 `-DBOOTLOADER_DIR=D:/Dependencies/STM32f_405_boot_loader` 后 Reload CMake。
+后续串口接收候选包只需编译 `APP.elf`。命令行在本 APP 项目根目录执行
+（需要 ARM GCC、CMake、构建工具和 Python 3.9 以上）：
+
+```powershell
+cmake -S . -B cmake-build-debug -DCMAKE_BUILD_TYPE=Debug -DBOOTLOADER_DIR=D:/Dependencies/STM32f_405_boot_loader -DPython3_EXECUTABLE=C:/msys64/ucrt64/bin/python.exe
 cmake --build cmake-build-debug --target firmware_bundle
 ```
 
-`firmware_bundle` 先生成 APP 及描述信息，再编译同级 Bootloader，最后生成
+`firmware_bundle` 先生成 APP 及描述信息，再编译 `BOOTLOADER_DIR` 指定的独立 Bootloader 项目，最后生成
 `cmake-build-debug/firmware.factory.hex`。它包含：
 
 | 内容 | 地址 |
@@ -52,7 +65,7 @@ HEX 自带地址，不需要手工指定加载偏移。首次装机时设备不�
 CLion 使用已有 `cmake-build-debug` 时，选择并构建 `firmware_bundle` 目标，
 对应产物为 `cmake-build-debug/firmware.factory.hex`。
 本工程 `flash.cfg` 使用 ST-Link/OpenOCD 烧录这个文件，烧录前先完成该目标的构建。
-单独编译 `APP.elf` 目标也会在链接后生成同目录的 `APP.bin` 和 `APP.hex`。
+单独编译 `APP.elf` 目标也会在链接后将 `APP.bin` 和 `APP.hex` 输出到当前构建目录。
 `APP_package` 目标额外生成描述信息及 APP 安装/暂存 HEX；`firmware_bundle` 再加入 Bootloader。
 
 ## 后续 APP 更新
@@ -73,14 +86,15 @@ CLion 使用已有 `cmake-build-debug` 时，选择并构建 `firmware_bundle` �
 修改固件版本号：
 
 ```powershell
-cmake -S . -B cmake-build-debug -DAPP_FIRMWARE_VERSION=2 -DPython3_EXECUTABLE=C:/msys64/ucrt64/bin/python.exe
+cmake -S . -B cmake-build-debug -DAPP_FIRMWARE_VERSION=2 -DBOOTLOADER_DIR=D:/Dependencies/STM32f_405_boot_loader -DPython3_EXECUTABLE=C:/msys64/ucrt64/bin/python.exe
 cmake --build cmake-build-debug --target APP_package
 ```
 
-可用 `-DBOOTLOADER_DIR=绝对路径` 指定 Bootloader 工程位置。打包工具直接读取
-Bootloader 的 `Core/Inc/boot_protocol.h`，共享地址和协议常量。
-若使用 STM32CubeIDE 编译，则需要先导出原始 APP.bin，再手工调用 Bootloader 的
-`tools/make_manifest.py` 打包，参数见 Bootloader README。
+`BOOTLOADER_DIR` 必须指向独立 Bootloader 仓库的根目录，不能指向其构建目录或 APP 目录。
+打包工具直接读取该仓库的 `Core/Inc/boot_protocol.h`，共享地址和协议常量。
+若使用 STM32CubeIDE 编译，则需要将该仓库的 `Core/Inc` 配置为头文件搜索路径，
+先导出原始 APP.bin，再调用该仓库的 `tools/make_manifest.py` 打包；参数见
+[Bootloader 项目说明](https://github.com/CHN-wang-zhuo/STM32f_405_boot_loader#readme)。
 
 ## USART1 在线升级
 
@@ -90,7 +104,8 @@ Bootloader 的 `Core/Inc/boot_protocol.h`，共享地址和协议常量。
 在 PowerShell 进入 APP 目录，使用本机已验证的 Python 路径执行：
 
 ```powershell
-Set-Location C:\Users\a2105\Documents\abc\STM\APP
+# 替换为本 APP 项目的实际检出路径
+Set-Location D:/Projects/APP
 $python = "C:\msys64\ucrt64\bin\python.exe"
 
 # 先查询，正常会打印状态和 running_version
@@ -127,7 +142,10 @@ $LASTEXITCODE
 无输出时应先确认解释器；串口占用或通信超时会由升级脚本打印错误。
 END 超时后先查询设备，不要直接反复上传；外部请求可能已经提交，重新 BEGIN 会撤销它。
 
-主机测试：`./tests/run_tests.ps1`。默认 MSYS2 UCRT64 GCC；脚本链接实际生产版升级服务和 Bootloader 核心。
+主机测试入口为 `./tests/run_tests.ps1`，默认 MSYS2 UCRT64 GCC，链接实际升级服务和
+[独立 Bootloader 项目](https://github.com/CHN-wang-zhuo/STM32f_405_boot_loader) 的核心源码。
+测试脚本中的源码引用需与实际 Bootloader 检出路径一致；`BOOTLOADER_DIR` 是 CMake 缓存变量，
+不会自动修改测试脚本中的路径。使用不同源码位置时，需同步调整脚本的头文件和 `bootloader.c` 引用。
 使用自定义 Python 时可通过 `-DPython3_EXECUTABLE=绝对路径` 选择可执行的解释器。
 若 CMake 打包时调用了不可访问的 Python，请重新运行上述配置命令；CLion 可在 CMake options 中
 加入 `-DPython3_EXECUTABLE=C:/msys64/ucrt64/bin/python.exe` 后 Reload CMake。

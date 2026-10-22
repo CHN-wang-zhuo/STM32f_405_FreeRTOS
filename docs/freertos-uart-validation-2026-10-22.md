@@ -1,5 +1,8 @@
 # FreeRTOS / USART1 在线升级实板验证
 
+本记录涉及本 APP 项目与独立的
+[STM32f_405_boot_loader 项目](https://github.com/CHN-wang-zhuo/STM32f_405_boot_loader)。
+
 日期：2026-10-22。工程目标 STM32F405RGT6，实板 Device ID 0x413，供电约 3.20 V。
 通过 ST-Link/SWD 烧录初始框架；实际升级数据通过用户确认的 COM4 / USART1 发送，
 不是由调试器直接写入暂存区。未执行整片擦除。

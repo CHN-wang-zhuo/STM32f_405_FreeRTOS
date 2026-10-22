@@ -1,5 +1,8 @@
 # Bootloader / APP 实板验证记录
 
+本记录涉及本 APP 项目与独立的
+[STM32f_405_boot_loader 项目](https://github.com/CHN-wang-zhuo/STM32f_405_boot_loader)。
+
 验证日期：2026-10-22。通过 ST-Link / SWD 操作实际连接板卡，未执行整片擦除。
 工程目标为 STM32F405RGT6；工具识别 Device ID `0x413`、Rev Y、1 MiB Flash、Cortex-M4，
 目标电压约 3.20 V。使用 STM32CubeProgrammer 2.23.0 和 OpenOCD 0.12.0。
