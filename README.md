@@ -3,7 +3,9 @@
 本工程与同级目录 `STM32f_405_boot_loader` 配套使用。启动链路为：
 复位 → Bootloader 校验描述信息和固件 → APP Reset_Handler → SystemInit → main。
 当前 APP 已接入 FreeRTOS V11.1.0，并提供 USART1 固件更新服务：
-分块接收 → 内部 Flash 暂存 → 校验 → 立即重启安装或下次复位安装。
+分块接收 → SPI1 DMA 写 W25Q16 → 校验并提交外部升级信息 → 立即重启或延期重启。
+本次只迁移 APP，Bootloader 保持不变，当前不会安装 W25Q16 中的候选固件。
+外部分区、64 字节升级记录和硬件连接见 [W25Q16 存储规范](docs/w25q16-update-storage.md)。
 目录职责和任务配置见 [分层架构](docs/architecture.md)，二进制格式见 [串口升级协议](docs/uart-update-protocol.md)。
 
 ## 启动配置
@@ -42,9 +44,10 @@ cmake --build cmake-build-debug --target firmware_bundle
 
 使用 STM32CubeProgrammer / SWD 对这个 HEX 按所含地址擦除、下载并校验，完成后复位。
 HEX 自带地址，不需要手工指定加载偏移。首次装机时设备不得在烧录中途运行；
-描述信息和 APP 完整写入并校验后再复位。已通过实板首次装机、暂存安装和复位启动验证，
-基础启动记录见 [首次实板记录](docs/hardware-validation-2026-10-22.md)，
-RTOS 与实际串口升级见 [FreeRTOS/USART1 联调记录](docs/freertos-uart-validation-2026-10-22.md)。
+描述信息和 APP 完整写入并校验后再复位。历史内部 Flash 版本的实板记录见
+[首次实板记录](docs/hardware-validation-2026-10-22.md) 和
+[FreeRTOS/USART1 联调记录](docs/freertos-uart-validation-2026-10-22.md)，
+这些记录不代表当前 W25Q16/DMA 版本已完成实板验证。
 
 CLion 使用已有 `cmake-build-debug` 时，选择并构建 `firmware_bundle` 目标，
 对应产物为 `cmake-build-debug/firmware.factory.hex`。
@@ -61,7 +64,7 @@ CLion 使用已有 `cmake-build-debug` 时，选择并构建 `firmware_bundle` �
 | `APP.elf` / `APP.hex` / `APP.bin` | 调试/原始固件；单独烧录不更新 Bootloader 所需描述信息 |
 | `APP.manifest.bin` | 32 字节描述信息，含长度、CRC、版本和提交标志 |
 | `APP.installed.hex` | SWD 直接更新运行区和描述信息，同时取消旧升级请求；保留 Bootloader |
-| `APP.update.hex` | SWD 写入暂存区及升级请求，复位后由 Bootloader 校验、搬运、提交并启动 |
+| `APP.update.hex` | 原 Bootloader 内部暂存安装流程的 SWD 调试包，地址仍在内部 Flash；不是 W25Q16 镜像 |
 
 这两个 APP HEX 都不包含 Bootloader；对已有 Bootloader 的板卡按所含扇区擦除并写入，
 不要选择整片擦除。`APP.update.hex` 仅用于调试器验证安装流程，烧录期间保持 MCU 停止，
@@ -81,7 +84,8 @@ Bootloader 的 `Core/Inc/boot_protocol.h`，共享地址和协议常量。
 
 ## USART1 在线升级
 
-首次通过 SWD 写入上述 FreeRTOS 框架后，后续可直接使用 COM4 更新原始 APP.bin。
+首次通过 SWD 写入本版 FreeRTOS 框架后，可使用 COM4 将候选 APP.bin 和升级信息存入 W25Q16。
+当前外部固件安装端尚未接入，接收成功不会改变实际运行版本。
 先在 CLion 编译 `APP.elf`，确认生成 `cmake-build-debug/APP.bin`，再关闭占用 COM4 的串口助手。
 在 PowerShell 进入 APP 目录，使用本机已验证的 Python 路径执行：
 
@@ -92,22 +96,21 @@ $python = "C:\msys64\ucrt64\bin\python.exe"
 # 先查询，正常会打印状态和 running_version
 & $python -u -B tools/uart_update.py --port COM4 query
 
-# 二选一：立即自动重启安装，或者下次复位安装
-& $python -u -B tools/uart_update.py --port COM4 upload cmake-build-debug/APP.bin --version 2 --mode now
-# & $python -u -B tools/uart_update.py --port COM4 upload cmake-build-debug/APP.bin --version 2 --mode defer
+# 将候选固件和升级信息存入 W25Q16，继续运行当前 APP
+& $python -u -B tools/uart_update.py --port COM4 upload cmake-build-debug/APP.bin --version 2 --mode defer
+# 如需提交后立即复位，改用 --mode now；当前 Bootloader 不会安装外部包
 
-# 安装完成后再次查询，确认 running_version 为 2
+# 查询应为 state=2（PENDING）、version=2；running_version 仍为原运行版本
 & $python -u -B tools/uart_update.py --port COM4 query
 ```
 
-`defer` 保持当前 APP 运行，下一次复位由 Bootloader 安装；`now` 在应答发完后主动复位安装。
+`defer` 保持当前 APP 运行并保留外部候选包；`now` 在应答发完后主动复位。
+**现有 Bootloader 未修改，任何复位都不会安装外部包。新版本部署仍需通过 SWD 使用 `APP.installed.hex`。**
 UART1 使用 115200/8N1，PA9 为 TX、PA10 为 RX；升级必须逐帧等待 ACK，不能直接流式发送整个 BIN。
 Windows 上位机脚本无需额外依赖。完整命令、错误码与重试约定见协议文档。
-开始上传后、显示 `Uploaded` 进度之前，设备会先擦除请求区，再按固件长度擦除所需暂存扇区，
-暂存区每个扇区为 128 KiB；约 23 KiB 固件只擦除 sector 8，保留 sectors 9–10。
-此时任务调度暂停，LED 会暂时停止闪烁；擦除完成并应答后开始分包传输，LED 恢复。
-传输中的 Flash 写入也会造成短暂停顿，当前实现不保证升级期间的任务实时性。
-原因、处理方式及优化方向见 [升级时 LED 暂停](docs/uart-update-protocol.md#升级时-led-暂停)。
+接收前先擦除 W25Q16 中的请求扇区和固件所需的 4 KiB 数据扇区，未使用分区不处理。
+擦写等待使用 DMA 完成信号量和 `vTaskDelay()`，不会暂停全局调度，也不擦写内部 Flash，
+LED 心跳可以继续运行；真实硬件时序和任务栈余量仍需实测。
 上传时会显示 `Uploaded 已上传字节/总字节`，成功应答中的 `status` 为 0。
 `--version` 是串口升级包的版本标记，可依次使用 2、3、4；串口上传无需先生成 manifest 或 HEX，
 也不依赖 `APP_FIRMWARE_VERSION` 的设置。其他电脑请将 `$python` 改为实际的 Python 3.9 以上解释器路径。
@@ -122,7 +125,7 @@ $LASTEXITCODE
 ```
 
 无输出时应先确认解释器；串口占用或通信超时会由升级脚本打印错误。
-END 超时后先查询设备，不要直接反复上传；请求可能已经提交并将在复位时安装。
+END 超时后先查询设备，不要直接反复上传；外部请求可能已经提交，重新 BEGIN 会撤销它。
 
 主机测试：`./tests/run_tests.ps1`。默认 MSYS2 UCRT64 GCC；脚本链接实际生产版升级服务和 Bootloader 核心。
 使用自定义 Python 时可通过 `-DPython3_EXECUTABLE=绝对路径` 选择可执行的解释器。

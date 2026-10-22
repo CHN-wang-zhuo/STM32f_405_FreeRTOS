@@ -8,7 +8,8 @@ set(SOURCES
     Core/Src/stm32f4xx_hal_msp.c Core/Src/dma.c Core/Src/gpio.c
     Core/Src/spi.c Core/Src/usart.c Core/Src/syscalls.c Core/Src/sysmem.c
     BSP/Src/bsp_board.c
-    Drivers/Device/Src/uart_transport.c Drivers/Device/Src/update_flash.c
+    Drivers/Device/Src/uart_transport.c Drivers/Device/Src/w25q16.c
+    Drivers/Device/Src/update_storage.c Drivers/Device/Src/update_identity.c
     Middlewares/UpdateProtocol/Src/update_protocol.c
     Services/FirmwareUpdate/Src/fw_update.c Application/Tasks/app_tasks.c)
 foreach(module hal hal_cortex hal_dma hal_dma_ex hal_flash hal_flash_ex hal_gpio

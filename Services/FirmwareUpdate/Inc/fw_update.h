@@ -10,6 +10,7 @@ typedef struct {
 
 typedef struct {
     uint8_t state;
+    bool storage_ready;
     uint32_t received;
     uint32_t running_version;
     BootImageManifest image;

@@ -21,18 +21,35 @@ static bool ValidVectors(const uint8_t *image, uint32_t size)
            (entry & 1U) != 0U && pc >= BOOT_APP_ADDRESS + 8U && pc < BOOT_APP_ADDRESS + size;
 }
 
+static uint8_t CheckImage(const BootImageManifest *manifest)
+{
+    uint8_t vectors[8], buffer[128];
+    if (!FwPort_Read(0, vectors, sizeof(vectors))) { return UPDATE_FLASH_ERROR; }
+    uint32_t crc = UINT32_MAX;
+    for (uint32_t offset = 0; offset < manifest->image_size; offset += sizeof(buffer)) {
+        const uint32_t count = manifest->image_size - offset < sizeof(buffer) ?
+                               manifest->image_size - offset : sizeof(buffer);
+        if (!FwPort_Read(offset, buffer, count)) { return UPDATE_FLASH_ERROR; }
+        crc = Update_CrcContinue(crc, buffer, count);
+    }
+    if (~crc != manifest->image_crc) { return UPDATE_BAD_CRC; }
+    return ValidVectors(vectors, manifest->image_size) ? UPDATE_OK : UPDATE_BAD_IMAGE;
+}
+
 void FwUpdate_Init(FwUpdate *u)
 {
     memset(u, 0, sizeof(*u));
     BootImageManifest installed;
     FwPort_ReadInstalled(&installed);
     if (ValidManifest(&installed)) { u->running_version = installed.version; }
+    u->storage_ready = FwPort_Init();
+    if (!u->storage_ready) { return; }
     BootImageManifest pending;
-    FwPort_ReadRequest(&pending);
+    if (!FwPort_ReadRequest(&pending)) { u->storage_ready = false; return; }
     if (ValidManifest(&pending)) {
-        const uint8_t *image = FwPort_Stage(0, pending.image_size);
-        if (image != NULL && ValidVectors(image, pending.image_size) &&
-            Update_Crc32(image, pending.image_size) == pending.image_crc) {
+        const uint8_t status = CheckImage(&pending);
+        if (status == UPDATE_FLASH_ERROR) { u->storage_ready = false; }
+        if (status == UPDATE_OK) {
             u->image = pending;
             u->received = pending.image_size;
             u->state = UPDATE_PENDING;
@@ -79,9 +96,14 @@ static uint8_t Data(FwUpdate *u, const UpdateFrame *f)
         count > u->image.image_size - offset ||
         ((count & 3U) != 0U && offset + count != u->image.image_size)) { return UPDATE_BAD_OFFSET; }
     if (offset < u->received) {
-        const uint8_t *stored = FwPort_Stage(offset, count);
-        return offset + count <= u->received && stored != NULL &&
-               memcmp(stored, f->payload + 4, count) == 0 ? UPDATE_OK : UPDATE_BAD_OFFSET;
+        if (count > u->received - offset) { return UPDATE_BAD_OFFSET; }
+        uint8_t stored[128];
+        for (uint32_t i = 0; i < count; i += sizeof(stored)) {
+            const uint32_t part = count - i < sizeof(stored) ? count - i : sizeof(stored);
+            if (!FwPort_Read(offset + i, stored, part)) { return UPDATE_FLASH_ERROR; }
+            if (memcmp(stored, f->payload + 4 + i, part) != 0) { return UPDATE_BAD_OFFSET; }
+        }
+        return UPDATE_OK;
     }
     if (!FwPort_Write(offset, f->payload + 4, count)) {
         u->state = UPDATE_IDLE;
@@ -95,10 +117,9 @@ static uint8_t Finish(FwUpdate *u, const UpdateFrame *f, bool *reset)
 {
     if (f->length != 1U || f->payload[0] > 1U) { return UPDATE_BAD_LENGTH; }
     if (u->state != UPDATE_RECEIVING || u->received != u->image.image_size) { return UPDATE_BAD_STATE; }
-    const uint8_t *image = FwPort_Stage(0, u->image.image_size);
-    if (image == NULL || Update_Crc32(image, u->image.image_size) != u->image.image_crc) { return UPDATE_BAD_CRC; }
-    if (!ValidVectors(image, u->image.image_size)) { return UPDATE_BAD_IMAGE; }
-    if (!FwPort_Commit(&u->image)) { u->state = UPDATE_IDLE; return UPDATE_FLASH_ERROR; }
+    const uint8_t status = CheckImage(&u->image);
+    if (status != UPDATE_OK) { return status; }
+    if (!FwPort_Commit(&u->image, f->payload[0])) { u->state = UPDATE_IDLE; return UPDATE_FLASH_ERROR; }
     u->state = UPDATE_PENDING;
     *reset = f->payload[0] == 1U;
     return UPDATE_OK;
@@ -109,7 +130,14 @@ void FwUpdate_Process(FwUpdate *u, const UpdateFrame *f, FwUpdateReply *reply)
     const uint32_t crc = Update_Crc32(f->payload, f->length);
     uint8_t status = UPDATE_OK;
     bool reset = false;
-    if (u->cached && f->sequence == u->last_sequence) {
+    if (!u->storage_ready) {
+        /* Retry a missing chip without stopping heartbeat or error ACKs. */
+        FwUpdate_Init(u);
+        if (!u->storage_ready) { status = UPDATE_FLASH_ERROR; }
+    }
+    if (status != UPDATE_OK) {
+        /* Report a normal error ACK even when external storage is unavailable. */
+    } else if (u->cached && f->sequence == u->last_sequence) {
         if (f->command == u->last_command && f->length == u->last_length && crc == u->last_crc) {
             *reply = u->last_reply;
             return;

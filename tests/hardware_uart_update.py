@@ -1,4 +1,8 @@
-"""Explicit hardware test: uploads a real APP, then requests an immediate update."""
+"""Explicit W25Q16 hardware test; requires this external-storage APP installed first.
+
+Writes the external candidate partition and requests a reset. The unchanged
+Bootloader must keep running the old APP; this test does not verify installation.
+"""
 import argparse
 from pathlib import Path
 import struct
@@ -43,8 +47,14 @@ def run(port, image, version):
             raise AssertionError("Invalid update mode was accepted")
         result = client.request(END, b"\x01")
         assert result["reset"] == 1 and result["version"] == version
-        print("PASS duplicate DATA and partial final word; invalid mode rejected; immediate ACK:", result)
-        return image
+        print("PASS duplicate DATA and partial final block; invalid mode rejected; reset ACK:", result)
+    with open_serial(port) as serial:
+        after = Client(serial).request(QUERY)
+        assert after["state"] == 2 and after["version"] == version
+        assert after["size"] == len(image) and after["crc"] == zlib.crc32(image)
+        assert after["running_version"] == before["running_version"]
+        print("PASS external candidate recovered after reset; original running version unchanged:", after)
+    return image
 
 
 if __name__ == "__main__":

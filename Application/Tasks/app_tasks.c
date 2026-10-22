@@ -26,9 +26,9 @@ static void UpdateTask(void *argument)
     (void)argument;
     uint8_t rx[128];
     uint8_t tx[UPDATE_HEADER_SIZE + UPDATE_RESPONSE_SIZE];
+    configASSERT(UartTransport_Init());
     FwUpdate_Init(&update);
     UpdateDecoder_Reset(&decoder);
-    configASSERT(UartTransport_Init());
     TickType_t last_byte = xTaskGetTickCount();
     TickType_t last_frame = last_byte;
     for (;;) {
