@@ -103,6 +103,9 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    /* A running heartbeat also verifies APP SysTick/vector-table ownership. */
+    HAL_GPIO_TogglePin(LED0_GPIO_Port, LED0_Pin);
+    HAL_Delay(500U);
   }
   /* USER CODE END 3 */
 }
