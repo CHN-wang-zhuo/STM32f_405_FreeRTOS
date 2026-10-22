@@ -44,10 +44,17 @@ static bool Word(uint32_t address, uint32_t value)
     return *(const volatile uint32_t *)(uintptr_t)address == value;
 }
 
-bool FwPort_Begin(void)
+bool FwPort_Begin(uint32_t image_size)
 {
+    /* F405 staging sectors 8, 9 and 10 are each 128 KiB. */
+    const uint32_t sector_size = UINT32_C(0x20000);
+    _Static_assert(BOOT_STAGE_ADDRESS == UINT32_C(0x08080000) &&
+                   BOOT_IMAGE_CAPACITY == UINT32_C(0x60000), "F405 staging geometry");
+    if (image_size < 8U || image_size > BOOT_IMAGE_CAPACITY) { return false; }
+    const uint32_t count = 1U + (image_size - 1U) / sector_size;
     if (!Open()) { return false; }
-    const bool ok = Erase(FLASH_SECTOR_3, 1U) && Erase(FLASH_SECTOR_8, 3U);
+    /* Old bytes outside this image are excluded by the manifest length/CRC. */
+    const bool ok = Erase(FLASH_SECTOR_3, 1U) && Erase(FLASH_SECTOR_8, count);
     return Close(ok);
 }
 

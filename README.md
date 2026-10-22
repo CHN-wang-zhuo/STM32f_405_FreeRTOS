@@ -103,6 +103,11 @@ $python = "C:\msys64\ucrt64\bin\python.exe"
 `defer` 保持当前 APP 运行，下一次复位由 Bootloader 安装；`now` 在应答发完后主动复位安装。
 UART1 使用 115200/8N1，PA9 为 TX、PA10 为 RX；升级必须逐帧等待 ACK，不能直接流式发送整个 BIN。
 Windows 上位机脚本无需额外依赖。完整命令、错误码与重试约定见协议文档。
+开始上传后、显示 `Uploaded` 进度之前，设备会先擦除请求区，再按固件长度擦除所需暂存扇区，
+暂存区每个扇区为 128 KiB；约 23 KiB 固件只擦除 sector 8，保留 sectors 9–10。
+此时任务调度暂停，LED 会暂时停止闪烁；擦除完成并应答后开始分包传输，LED 恢复。
+传输中的 Flash 写入也会造成短暂停顿，当前实现不保证升级期间的任务实时性。
+原因、处理方式及优化方向见 [升级时 LED 暂停](docs/uart-update-protocol.md#升级时-led-暂停)。
 上传时会显示 `Uploaded 已上传字节/总字节`，成功应答中的 `status` 为 0。
 `--version` 是串口升级包的版本标记，可依次使用 2、3、4；串口上传无需先生成 manifest 或 HEX，
 也不依赖 `APP_FIRMWARE_VERSION` 的设置。其他电脑请将 `$python` 改为实际的 Python 3.9 以上解释器路径。

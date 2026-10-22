@@ -33,12 +33,14 @@ static bool Program(uint32_t address, uint32_t value)
     return true;
 }
 
-bool FwPort_Begin(void)
+bool FwPort_Begin(uint32_t image_size)
 {
-    return EraseAt(BOOT_REQUEST_ADDRESS, 0x4000) &&
-           EraseAt(BOOT_STAGE_ADDRESS, 0x20000) &&
-           EraseAt(BOOT_STAGE_ADDRESS + 0x20000, 0x20000) &&
-           EraseAt(BOOT_STAGE_ADDRESS + 0x40000, 0x20000);
+    assert(image_size >= 8U && image_size <= BOOT_IMAGE_CAPACITY);
+    if (!EraseAt(BOOT_REQUEST_ADDRESS, 0x4000)) { return false; }
+    for (uint32_t offset = 0; offset < image_size; offset += 0x20000U) {
+        if (!EraseAt(BOOT_STAGE_ADDRESS + offset, 0x20000)) { return false; }
+    }
+    return true;
 }
 bool FwPort_Cancel(void) { return EraseAt(BOOT_REQUEST_ADDRESS, 0x4000); }
 bool FwPort_Write(uint32_t offset, const uint8_t *data, uint32_t size)
@@ -151,6 +153,10 @@ static void TestTransferAndBoot(void)
         assert(Update_Get32(At(BOOT_REQUEST_ADDRESS + 28)) == UINT32_MAX);
         assert(memcmp(At(BOOT_STAGE_ADDRESS), image, sizeof(image)) == 0);
         assert(At(BOOT_STAGE_ADDRESS)[sizeof(image)] == 0xFF); /* padding excluded from CRC */
+        /* Stale data in untouched sectors must not affect validation or install. */
+        for (uint32_t i = 0x20000; i < BOOT_IMAGE_CAPACITY; ++i) {
+            assert(At(BOOT_STAGE_ADDRESS)[i] == 0xA5);
+        }
         FwUpdate recovered;
         FwUpdate_Init(&recovered);
         assert(recovered.state == UPDATE_PENDING);
@@ -260,6 +266,16 @@ static void TestMaximumAndReadbackCrc(void)
     assert(memcmp(At(BOOT_APP_ADDRESS), maximum, sizeof(maximum)) == 0);
     assert(*At(0x080E0000) == 0xA5);
     puts("PASS: full 384 KiB transfer/install, exact partition boundary and readback CRC rejection");
+
+    /* A shorter replacement must ignore valid old firmware in sectors 9-10. */
+    FwUpdate_Init(&u);
+    assert(Transfer(&u, 0));
+    assert(memcmp(At(BOOT_STAGE_ADDRESS + 0x20000), maximum + 0x20000,
+                  BOOT_IMAGE_CAPACITY - 0x20000) == 0);
+    assert(Boot_PrepareApplication() == BOOT_READY);
+    assert(Update_Get32(At(BOOT_INSTALLED_ADDRESS + 16)) == 2);
+    assert(memcmp(At(BOOT_APP_ADDRESS), image, sizeof(image)) == 0);
+    puts("PASS: large-to-small update preserves unused staging sectors and installs only the new image");
 }
 
 static void TestParser(void)

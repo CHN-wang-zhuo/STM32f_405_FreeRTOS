@@ -55,7 +55,7 @@ static uint8_t Begin(FwUpdate *u, const UpdateFrame *f)
     const uint32_t size = Update_Get32(f->payload);
     if (size < 8U || size > BOOT_IMAGE_CAPACITY) { return UPDATE_BAD_LENGTH; }
     /* A fresh BEGIN explicitly replaces any previously deferred request. */
-    if (!FwPort_Begin()) { u->state = UPDATE_IDLE; return UPDATE_FLASH_ERROR; }
+    if (!FwPort_Begin(size)) { u->state = UPDATE_IDLE; return UPDATE_FLASH_ERROR; }
     memset(&u->image, 0xFF, sizeof(u->image));
     u->image.magic = BOOT_IMAGE_MAGIC;
     u->image.format = BOOT_IMAGE_FORMAT;

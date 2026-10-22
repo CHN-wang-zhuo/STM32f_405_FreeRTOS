@@ -62,6 +62,25 @@ STM32F405 是单 Bank Flash。擦写期间会阻塞从 Flash 取指，设备驱�
 因此升级擦写阶段不保证心跳或实时任务的周期，HAL/RTOS tick 也不代表完整的墙钟耗时。
 上位机必须等 ACK 才发送下一帧，不在擦写时连续流式发送。BEGIN 默认等待上限 20 秒。
 
+### 擦写期间的任务暂停
+
+`Drivers/Device/Src/update_flash.c` 的 `Open()` 调用 `vTaskSuspendAll()`，
+`Close()` 调用 `xTaskResumeAll()`；当前整个 `FwPort_Begin()` 擦除过程位于这一调度暂停区间内。
+BEGIN 从协议获得固件长度，通过 `FwPort_Begin(image_size)` 传给设备驱动；
+驱动先擦除请求 sector 3，再从 sector 8 起擦除 `ceil(image_size / 128 KiB)` 个暂存扇区。
+固件大小不超过 128 KiB 时只擦 sector 8，超过 128 KiB 加擦 sector 9，超过 256 KiB 再加擦 sector 10。
+扇区边界采用向上取整，恰好 128/256 KiB 时不会多擦一个扇区；非法长度在任何擦除之前拒绝。
+因此在主机开始显示 DATA 上传进度前，LED 心跳会明显暂停；擦除结束、恢复调度并回复 ACK 后才开始传输。
+DATA 每块编程和 END 请求提交也会短暂暂停任务调度。
+
+调度暂停不会直接关闭中断，但单 Bank Flash 擦写会阻塞对 Flash 的读取；
+当前代码和中断入口位于 Flash，单纯移除 `vTaskSuspendAll()` 或调整任务优先级无法保证实时性。
+按固件长度擦除已实现，可缩短小固件 BEGIN 的停顿，但仍会擦除整个所需扇区，不能按字节擦除。
+未使用扇区中的旧内容不参与当前描述信息中长度范围之外的 CRC 和安装；下次固件变大时会按新长度擦除。
+Bootloader 的运行区擦除逻辑不在本次修改范围，协议帧和上位机用法也不变。
+完整 RAM 执行路径或外部存储暂存可作为持续运行方案，这两项尚未实现。
+完整现象解释及主机处理方式见 [升级时 LED 暂停](uart-update-protocol.md#升级时-led-暂停)。
+
 ## 构建和生成工具
 
 CMake 使用显式源文件清单，第三方示例、其他端口及主机测试不会混入固件。
@@ -78,4 +97,7 @@ CubeMX 重新生成可能重新加入裸机的 SVC/PendSV 和 main 初始化调�
 在 APP 根目录执行 `./tests/run_tests.ps1`。脚本编译生产版协议、升级服务和同级 Bootloader 核心，
 使用 NOR Flash 模型覆盖立即/延期安装、重试、乱序、取消、超时、非法入口和擦写失败，
 再运行 Python 客户端帧格式及超时重试测试。默认主机 C 编译器为 MSYS2 UCRT64 GCC。
+另将实际 `update_flash.c` 与 HAL/RTOS 桩链接，检查 128/256/384 KiB 边界的扇区选择、
+请求区先擦除、非法长度无擦写和失败后恢复调度；服务联调测试保留未使用暂存扇区中的旧数据，验证仍能安装。
+测试产物放在 `cmake-build-debug/tests/`，不再创建独立的 `build/` 目录。
 这组模型测试不操作串口，也不烧录硬件。
